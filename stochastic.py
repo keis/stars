@@ -4,7 +4,7 @@ import csv
 from functools import reduce
 from math import sqrt
 from typing import Any, Iterable
-from itertools import product
+from itertools import product, chain
 
 import matplotlib.pyplot as plt
 from tabulate import tabulate
@@ -32,7 +32,7 @@ class Stochastic(dict):
         return sqrt(
             reduce(
                 operator.add,
-                ((p * (v - mu)) ** 2 for v, p in self.items())
+                (p * (v - mu) ** 2 for v, p in self.items())
             ))
 
     def apply(self, other, op):
@@ -60,8 +60,6 @@ def keep(vars, count):
 
 def dice(spec) -> Stochastic:
     m = re.match(r'(\d)?d(\d+)(?:k(\d))?(?:\+(\d+))?', spec)
-    if m is None:
-        print(spec)
     count, size, k, offset = [int(v) if v else None for v in m.groups()]
     d = Stochastic.uniform(range(1, size + 1))
     return (
@@ -101,10 +99,9 @@ def asset_attack(asset, defender):
 
 
 def display(attack):
-    fig, (ax1, ax2) = plt.subplots(1, 2)
-    title = f"{attack['attacker']} attacking {attack['defender']}"
-    fig.canvas.set_window_title(title)
-    plt.title(title)
+    fig, (ax1, ax2) = plt.subplots(2, 1)
+    fig.canvas.set_window_title(
+        f"{attack['attacker']} attacking {attack['defender']}")
     items = sorted(attack['damage'].items())
     keys = ('hit', 'counter', 'damage')
     ax1.bar(
@@ -114,7 +111,7 @@ def display(attack):
     )
     ax2.bar(
         [v for v, _ in items],
-        [p for _, p in items]
+        [p*100 for _, p in items]
     )
 
 
@@ -159,7 +156,7 @@ with open('assets.csv') as assetscsv:
     assets = list(csv.DictReader(assetscsv))
 
 
-def main():
+def top():
     balls = filter(None, (faction_ball(f) for f in factions))
     attacks = [
         ball_attack(ball, faction)
@@ -176,8 +173,27 @@ def main():
         ]
         for attack in biggest[:50]
     ]))
+
+
+def details(args):
+    *attackers, defender = args
+    defender = factions[defender]
+    ball = list(chain(*[faction_ball(attacker) for attacker in attackers]))
+    attack = ball_attack(ball, defender)
+    hp = int(defender['HP'])
+    o = sum(p for v, p in attack['damage'].items() if v >= hp)
+    print('one turn kill', o * 100)
+    print(
+        str(attack['damage'].expected()),
+        ', '.join(attack['assets'])
+    )
+    display(attack)
     plt.show()
 
 
 if __name__ == '__main__':
-    main()
+    import sys
+    if sys.argv[1] == 'details':
+        details(sys.argv[2:])
+    elif sys.argv[1] == 'top':
+        top()
