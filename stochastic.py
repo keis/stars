@@ -1,4 +1,6 @@
+import re
 import operator
+from functools import reduce
 from typing import Any, Iterable
 from itertools import product
 
@@ -19,25 +21,42 @@ class Stochastic(dict):
 
     def apply(self, other, op):
         result = Stochastic()
-        for (av, ap), (bv, bp) in product(self.items(), other.items()):
-            v = op(av, bv)
-            p = ap * bp
+        for point in product(*[v.items() for v in [self, *other]]):
+            v = op(*[v for v, _ in point])
+            p = reduce(operator.mul, [p for _, p in point], 1)
             result[v] += p
         return result
 
     def __add__(self, other: 'Stochastic'):
-        return self.apply(other, operator.add)
+        return self.apply([other], operator.add)
 
     def __mul__(self, scalar: int):
-        v = self
-        for _ in range(1, scalar):
-            v += self
-        return v
+        return reduce(operator.add, [self] * scalar)
+
+
+def keep(vars, count):
+    head, *others = vars
+    return head.apply(
+        others,
+        lambda *v: reduce(operator.add, sorted(v, reverse=True)[:count])
+    )
+
+
+def dice(spec) -> Stochastic:
+    m = re.match(r'(\d)?d(\d+)(?:k(\d))?(?:\+(\d+))?', spec)
+    count, size, k, offset = [int(v) if v else None for v in m.groups()]
+    d = Stochastic.uniform(range(1, size + 1))
+    return (
+        keep([d] * (count or 1), k or count or 1)
+        + Stochastic.constant(offset or 0)
+    )
+
+
+def attack(attacker, defender, damage):
+    return attacker.apply(
+        [defender, damage], lambda a, b, c: c if a >= b else 0)
 
 
 if __name__ == '__main__':
-    a = Stochastic.uniform(range(1, 7))
-    b = Stochastic.uniform(range(1, 7))
-    print((a + b).items())
-    print((a * 2).items())
-    print((a + Stochastic.constant(3)).items())
+    atk = attack(dice('d10+2'), dice('d10'), dice('2d8+2'))
+    print(atk)
