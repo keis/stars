@@ -1,8 +1,13 @@
 import re
 import operator
+import csv
 from functools import reduce
+from math import sqrt
 from typing import Any, Iterable
 from itertools import product
+
+import matplotlib.pyplot as plt
+from tabulate import tabulate
 
 
 class Stochastic(dict):
@@ -18,6 +23,17 @@ class Stochastic(dict):
 
     def __missing__(self, key):
         return 0
+
+    def expected(self):
+        return reduce(operator.add, (v * p for v, p in self.items()))
+
+    def stddev(self):
+        mu = self.expected()
+        return sqrt(
+            reduce(
+                operator.add,
+                ((p * (v - mu)) ** 2 for v, p in self.items())
+            ))
 
     def apply(self, other, op):
         result = Stochastic()
@@ -44,6 +60,8 @@ def keep(vars, count):
 
 def dice(spec) -> Stochastic:
     m = re.match(r'(\d)?d(\d+)(?:k(\d))?(?:\+(\d+))?', spec)
+    if m is None:
+        print(spec)
     count, size, k, offset = [int(v) if v else None for v in m.groups()]
     d = Stochastic.uniform(range(1, size + 1))
     return (
@@ -57,6 +75,109 @@ def attack(attacker, defender, damage):
         [defender, damage], lambda a, b, c: c if a >= b else 0)
 
 
+def parse_attack(attack):
+    roll, dmg = attack.split(', ')
+    return (*re.split('[vV]', roll), dice(dmg))
+
+
+def asset_attack(asset, defender):
+    if asset['Attack'] == 'None' or asset['Attack'].endswith('Special'):
+        return {
+            'hit': Stochastic.constant(0),
+            'counter': Stochastic.constant(0),
+            'damage': Stochastic.constant(0),
+        }
+
+    attacker = factions[asset['Owner']]
+    a, d, dmg = parse_attack(asset['Attack'])
+
+    a_dice = dice('d10+' + attacker[a])
+    d_dice = dice('d10+' + defender[d])
+    return {
+        'hit': a_dice.apply([d_dice], lambda a, b: int(a >= b)),
+        'counter': a_dice.apply([d_dice], lambda a, b: int(a <= a)),
+        'damage': attack(a_dice, d_dice, dmg),
+    }
+
+
+def display(attack):
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+    title = f"{attack['attacker']} attacking {attack['defender']}"
+    fig.canvas.set_window_title(title)
+    plt.title(title)
+    items = sorted(attack['damage'].items())
+    keys = ('hit', 'counter', 'damage')
+    ax1.bar(
+        keys,
+        [attack[k].expected() for k in keys],
+        yerr=[attack[k].stddev() for k in keys],
+    )
+    ax2.bar(
+        [v for v, _ in items],
+        [p for _, p in items]
+    )
+
+
+def faction_ball(name):
+    def isattacking(asset):
+        return not (
+            asset['Attack'] == 'None' or
+            asset['Attack'].endswith('Special')
+        )
+    fa = [a for a in assets if a['Owner'] == name]
+    if any(a['Asset'] == 'Transit Web' for a in fa):
+        return [
+            a for a in fa
+            if a['W/C/F'] in ('Wealth', 'Cunning')
+            and isattacking(a)
+            and a['Asset'] != 'Transit Web'
+        ]
+    if any(a['Asset'] == 'Covert Transit Net' for a in fa):
+        return [
+            a for a in fa
+            if a['Type'] in ('Special Forces',) and isattacking(a)
+        ]
+    return []
+
+
+def ball_attack(ball, defender):
+    attacks = [asset_attack(asset, defender) for asset in ball]
+    return {
+        'assets': [asset['Asset'] for asset in ball],
+        'attacker': ball[0]['Owner'],
+        'defender': defender['Faction Name'],
+        'damage': reduce(operator.add, [a['damage'] for a in attacks]),
+        'hit': reduce(operator.add, [a['hit'] for a in attacks]),
+        'counter': reduce(operator.add, [a['counter'] for a in attacks]),
+    }
+
+
+with open('factions.csv') as factionscsv:
+    factions = {r['Faction Name']: r for r in csv.DictReader(factionscsv)}
+
+with open('assets.csv') as assetscsv:
+    assets = list(csv.DictReader(assetscsv))
+
+
+def main():
+    balls = filter(None, (faction_ball(f) for f in factions))
+    attacks = [
+        ball_attack(ball, faction)
+        for faction, ball in product(factions.values(), balls)
+    ]
+    biggest = sorted(
+        attacks, reverse=True, key=lambda a: a['damage'].expected())
+    print(tabulate([
+        [
+            attack['attacker'],
+            attack['defender'],
+            str(attack['damage'].expected()),
+            ', '.join(attack['assets'])
+        ]
+        for attack in biggest[:50]
+    ]))
+    plt.show()
+
+
 if __name__ == '__main__':
-    atk = attack(dice('d10+2'), dice('d10'), dice('2d8+2'))
-    print(atk)
+    main()
