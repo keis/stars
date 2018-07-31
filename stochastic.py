@@ -93,7 +93,7 @@ def asset_attack(asset, defender):
     d_dice = dice('d10+' + defender[d])
     return {
         'hit': a_dice.apply([d_dice], lambda a, b: int(a >= b)),
-        'counter': a_dice.apply([d_dice], lambda a, b: int(a <= a)),
+        'counter': a_dice.apply([d_dice], lambda a, b: int(a <= b)),
         'damage': attack(a_dice, d_dice, dmg),
     }
 
@@ -158,6 +158,8 @@ with open('assets.csv') as assetscsv:
 
 def top():
     balls = filter(None, (faction_ball(f) for f in factions))
+    for ball in balls:
+        print(ball[0]['Owner'], '\t', ', '.join(a['Asset'] for a in ball))
     attacks = [
         ball_attack(ball, faction)
         for faction, ball in product(factions.values(), balls)
@@ -180,13 +182,14 @@ def details(args):
     defender = factions[defender]
     ball = list(chain(*[faction_ball(attacker) for attacker in attackers]))
     attack = ball_attack(ball, defender)
-    hp = int(defender['HP'])
+    hp = int(defender['HP']) + 15 + 10
     o = sum(p for v, p in attack['damage'].items() if v >= hp)
     print('one turn kill', o * 100)
     print(
         str(attack['damage'].expected()),
         ', '.join(attack['assets'])
     )
+    print(attack['counter'].expected())
     display(attack)
     plt.show()
 
