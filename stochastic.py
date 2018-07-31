@@ -10,6 +10,14 @@ import matplotlib.pyplot as plt
 from tabulate import tabulate
 
 
+def sign(i: int) -> int:
+    if i > 0:
+        return 1
+    if i < 0:
+        return -1
+    return 0
+
+
 class Stochastic(dict):
     @classmethod
     def constant(cls, value: Any) -> 'Stochastic':
@@ -82,7 +90,6 @@ def asset_attack(asset, defender):
     if asset['Attack'] == 'None' or asset['Attack'].endswith('Special'):
         return {
             'hit': Stochastic.constant(0),
-            'counter': Stochastic.constant(0),
             'damage': Stochastic.constant(0),
         }
 
@@ -92,9 +99,8 @@ def asset_attack(asset, defender):
     a_dice = dice('d10+' + attacker[a])
     d_dice = dice('d10+' + defender[d])
     return {
-        'hit': a_dice.apply([d_dice], lambda a, b: int(a >= b)),
-        'counter': a_dice.apply([d_dice], lambda a, b: int(a <= b)),
-        'damage': attack(a_dice, d_dice, dmg),
+        'hit': a_dice.apply([d_dice], lambda a, b: sign(a - b)),
+        'damage': dmg,
     }
 
 
@@ -143,9 +149,24 @@ def ball_attack(ball, defender):
         'assets': [asset['Asset'] for asset in ball],
         'attacker': ball[0]['Owner'],
         'defender': defender['Faction Name'],
-        'damage': reduce(operator.add, [a['damage'] for a in attacks]),
-        'hit': reduce(operator.add, [a['hit'] for a in attacks]),
-        'counter': reduce(operator.add, [a['counter'] for a in attacks]),
+        'damage': reduce(
+            operator.add,
+            [
+                a['hit'].apply([a['damage']], lambda a, d: d if a >= 0 else 0)
+                for a in attacks
+            ]),
+        'hit': reduce(
+            operator.add,
+            [
+                a['hit'].apply([], lambda a: int(a >= 0))
+                for a in attacks
+            ]),
+        'counter': reduce(
+            operator.add,
+            [
+                a['hit'].apply([], lambda a: int(a <= 0))
+                for a in attacks
+            ]),
     }
 
 
