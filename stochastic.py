@@ -8,6 +8,7 @@ from itertools import product, chain
 
 import matplotlib.pyplot as plt
 from tabulate import tabulate
+from dataclasses import dataclass
 
 
 def sign(i: int) -> int:
@@ -58,6 +59,21 @@ class Stochastic(dict):
         return reduce(operator.add, [self] * scalar)
 
 
+@dataclass(unsafe_hash=True)
+class Attacker:
+    asset: str
+    hp: int
+    hit: Stochastic
+    damage: Stochastic
+
+
+@dataclass(unsafe_hash=True)
+class Defender:
+    asset: str
+    hp: int
+    damage: Stochastic
+
+
 def keep(vars, count):
     head, *others = vars
     return head.apply(
@@ -88,20 +104,36 @@ def parse_attack(attack):
 
 def asset_attack(asset, defender):
     if asset['Attack'] == 'None' or asset['Attack'].endswith('Special'):
-        return {
-            'hit': Stochastic.constant(0),
-            'damage': Stochastic.constant(0),
-        }
+        return Attacker(
+            asset=asset['Asset'],
+            hp=asset['HP'],
+            hit=Stochastic.constant(0),
+            damage=Stochastic.constant(0),
+        )
 
     attacker = factions[asset['Owner']]
     a, d, dmg = parse_attack(asset['Attack'])
 
     a_dice = dice('d10+' + attacker[a])
     d_dice = dice('d10+' + defender[d])
-    return {
-        'hit': a_dice.apply([d_dice], lambda a, b: sign(a - b)),
-        'damage': dmg,
-    }
+    return Attacker(
+        asset=asset['Asset'],
+        hp=int(asset['HP']),
+        hit=a_dice.apply([d_dice], lambda a, b: sign(a - b)),
+        damage=dmg,
+    )
+
+
+def asset_counter(asset):
+    if asset['Counter'] == 'None':
+        dmg = Stochastic.constant(0)
+    else:
+        dmg = dice(asset['Counter'])
+    return Defender(
+        asset=asset['Asset'],
+        hp=int(asset['HP']),
+        damage=dmg,
+    )
 
 
 def display(attack):
@@ -143,28 +175,80 @@ def faction_ball(name):
     return []
 
 
-def potential(ball, defender):
-    attacks = [asset_attack(asset, defender) for asset in ball]
+def main_boi_defense(faction):
+    mainboi = max([
+        a for a in assets
+        if a['Owner'] == faction['Faction Name']
+        and a['Asset'] == 'Base Of Influence'
+    ], key=lambda boi: int(boi['HP']))
+    return [
+        a for a in assets
+        if a['Owner'] == faction['Faction Name']
+        and a['Location'] == mainboi['Location']
+    ]
+
+
+def order_attacks(attacks):
+    return sorted(
+        attacks,
+        key=lambda atk: (atk.hit.expected(), atk.damage.expected()),
+        reverse=True,
+    )
+
+
+def order_defense(counters):
+    return sorted(
+        counters,
+        key=lambda c: (
+            c.asset == 'Base Of Influence',
+            c.damage.expected() == 0,
+            c.damage.expected()
+        )
+    )
+
+
+def apply_attack(defenders, hit, dmg):
+    if hit < 0:
+        return defenders
+    head, *tail = defenders
+    if head > dmg:
+        return (head - dmg, *tail)
+    return tuple(tail)
+
+
+def potential(attackers, defenders):
+    defender = factions[defenders[0]['Owner']]
+    attacks = order_attacks(
+        asset_attack(asset, defender) for asset in attackers)
+    defense = order_defense(
+        asset_counter(asset) for asset in defenders)
+
+    remaining_defenders = Stochastic.constant(tuple(a.hp for a in defense))
+    for atk in attacks:
+        remaining_defenders = remaining_defenders.apply(
+            [atk.hit, atk.damage], apply_attack)
+
     return {
-        'assets': [asset['Asset'] for asset in ball],
-        'attacker': ball[0]['Owner'],
+        'attacking_assets': [attack.asset for attack in attacks],
+        'defending_assets': [counter.asset for counter in defense],
+        'attacker': attackers[0]['Owner'],
         'defender': defender['Faction Name'],
         'damage': reduce(
             operator.add,
             [
-                a['hit'].apply([a['damage']], lambda a, d: d if a >= 0 else 0)
+                a.hit.apply([a.damage], lambda a, d: d if a >= 0 else 0)
                 for a in attacks
             ]),
         'hit': reduce(
             operator.add,
             [
-                a['hit'].apply([], lambda a: int(a >= 0))
+                a.hit.apply([], lambda a: int(a >= 0))
                 for a in attacks
             ]),
         'counter': reduce(
             operator.add,
             [
-                a['hit'].apply([], lambda a: int(a <= 0))
+                a.hit.apply([], lambda a: int(a <= 0))
                 for a in attacks
             ]),
     }
@@ -182,7 +266,7 @@ def top():
     for ball in balls:
         print(ball[0]['Owner'], '\t', ', '.join(a['Asset'] for a in ball))
     attacks = [
-        potential(ball, faction)
+        potential(ball, main_boi_defense(faction))
         for faction, ball in product(factions.values(), balls)
     ]
     biggest = sorted(
@@ -202,13 +286,15 @@ def details(args):
     *attackers, defender = args
     defender = factions[defender]
     ball = list(chain(*[faction_ball(attacker) for attacker in attackers]))
-    attack = potential(ball, defender)
+    attack = potential(ball, main_boi_defense(defender))
     hp = int(defender['HP']) + 15 + 10
     o = sum(p for v, p in attack['damage'].items() if v >= hp)
     print('one turn kill', o * 100)
     print(
         str(attack['damage'].expected()),
-        ', '.join(attack['assets'])
+        ', '.join(attack['attacking_assets']),
+        'VS',
+        ', '.join(attack['defending_assets']),
     )
     print(attack['counter'].expected())
     display(attack)
