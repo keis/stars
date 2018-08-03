@@ -143,7 +143,7 @@ def faction_ball(name):
     return []
 
 
-def ball_attack(ball, defender):
+def potential(ball, defender):
     attacks = [asset_attack(asset, defender) for asset in ball]
     return {
         'assets': [asset['Asset'] for asset in ball],
@@ -182,7 +182,7 @@ def top():
     for ball in balls:
         print(ball[0]['Owner'], '\t', ', '.join(a['Asset'] for a in ball))
     attacks = [
-        ball_attack(ball, faction)
+        potential(ball, faction)
         for faction, ball in product(factions.values(), balls)
     ]
     biggest = sorted(
@@ -202,7 +202,7 @@ def details(args):
     *attackers, defender = args
     defender = factions[defender]
     ball = list(chain(*[faction_ball(attacker) for attacker in attackers]))
-    attack = ball_attack(ball, defender)
+    attack = potential(ball, defender)
     hp = int(defender['HP']) + 15 + 10
     o = sum(p for v, p in attack['damage'].items() if v >= hp)
     print('one turn kill', o * 100)
