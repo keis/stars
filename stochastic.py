@@ -145,7 +145,10 @@ def display(attack):
     fig.canvas.set_window_title(
         f"{attack['attacker']} attacking {attack['defender']}")
 
-    keys = ('hit', 'counter', 'remaining_defending_assets')
+    keys = (
+        'hit', 'counter',
+        'remaining_defending_assets', 'remaining_attacking_assets'
+    )
     ax1.bar(
         keys,
         [attack[k].expected() for k in keys],
@@ -257,6 +260,7 @@ def potential(attackers, defenders):
     damage = []
     counter_damage = []
     remaining_defenders = Stochastic.constant(tuple(a.hp for a in defense))
+    remaining_attackers = Stochastic.constant(len(attacks))
     for atk in attacks:
         dmg = atk.hit.apply([atk.damage], lambda a, d: d if a >= 0 else 0)
         counter = remaining_defenders.apply(
@@ -267,6 +271,9 @@ def potential(attackers, defenders):
             )
         )
         remaining_defenders = remaining_defenders.apply([dmg], apply_damage_v2)
+        remaining_attackers = remaining_attackers.apply(
+            [counter],
+            lambda attackers, dmg: attackers - (dmg > atk.hp))
         damage.append(dmg)
         counter_damage.append(counter)
 
@@ -275,6 +282,7 @@ def potential(attackers, defenders):
         'defending_assets': [counter.asset for counter in defense],
         'remaining_defending_assets': remaining_defenders.apply(
             [], lambda d: len(d)),
+        'remaining_attacking_assets': remaining_attackers,
         'attacker': attackers[0]['Owner'],
         'defender': defender['Faction Name'],
         'damage': reduce(operator.add, damage),
