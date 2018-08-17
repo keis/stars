@@ -162,7 +162,7 @@ def display(attack):
         yerr=[attack[k].stddev() for k in keys],
     )
 
-    damage = sorted(attack['damage'].items())
+    damage = sorted(attack['hplost'].items())
     ax3.bar(
         [v for v, _ in damage],
         [p*100 for _, p in damage]
@@ -197,17 +197,21 @@ def faction_ball(name):
     return []
 
 
+def on_world(faction, world):
+    return [
+        a for a in assets
+        if a['Owner'] == faction['Faction Name']
+        and a['Location'] == world
+    ]
+
+
 def main_boi_defense(faction):
     mainboi = max([
         a for a in assets
         if a['Owner'] == faction['Faction Name']
         and a['Asset'] == 'Base Of Influence'
     ], key=lambda boi: int(boi['HP']))
-    return [
-        a for a in assets
-        if a['Owner'] == faction['Faction Name']
-        and a['Location'] == mainboi['Location']
-    ]
+    return on_world(faction,  mainboi['Location'])
 
 
 def order_attacks(attacks):
