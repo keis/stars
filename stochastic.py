@@ -22,13 +22,12 @@ class Stochastic(dict):
     def expected(self):
         return reduce(operator.add, (v * p for v, p in self.items()))
 
-    def stddev(self):
+    def variance(self):
         mu = self.expected()
-        return sqrt(
-            reduce(
-                operator.add,
-                (p * (v - mu) ** 2 for v, p in self.items())
-            ))
+        return sum((p * (v - mu) ** 2 for v, p in self.items()))
+
+    def stddev(self):
+        return sqrt(self.variance())
 
     def apply(self, other, op):
         result = Stochastic()
