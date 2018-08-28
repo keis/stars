@@ -29,20 +29,21 @@ class Stochastic(dict):
     def stddev(self):
         return sqrt(self.variance())
 
-    def apply(self, other, op):
-        result = Stochastic()
-        for point in product(*[v.items() for v in [self, *other]]):
-            v = op(*[v for v, _ in point])
-            p = reduce(operator.mul, [p for _, p in point], 1)
-            if isinstance(v, Stochastic):
-                for iv, ip in v.items():
-                    result[iv] += (p * ip)
-            else:
-                result[v] += p
-        return result
-
     def __add__(self, other: 'Stochastic'):
-        return self.apply([other], operator.add)
+        return apply([self, other], operator.add)
 
     def __mul__(self, scalar: int):
         return reduce(operator.add, [self] * scalar)
+
+
+def apply(vars: Iterable[Stochastic], op) -> Stochastic:
+    result = Stochastic()
+    for point in product(*[v.items() for v in vars]):
+        v = op(*[v for v, _ in point])
+        p = reduce(operator.mul, [p for _, p in point], 1)
+        if isinstance(v, Stochastic):
+            for iv, ip in v.items():
+                result[iv] += (p * ip)
+        else:
+            result[v] += p
+    return result

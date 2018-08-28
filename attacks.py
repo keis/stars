@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from tabulate import tabulate
 from dataclasses import dataclass
 
-from stochastic import Stochastic
+from stochastic import Stochastic, apply
 
 
 def sign(i: int) -> int:
@@ -36,8 +36,8 @@ class Defender:
 
 def keep(vars, count):
     head, *others = vars
-    return head.apply(
-        others,
+    return apply(
+        vars,
         lambda *v: reduce(operator.add, sorted(v, reverse=True)[:count])
     )
 
@@ -53,8 +53,8 @@ def dice(spec) -> Stochastic:
 
 
 def attack(attacker, defender, damage):
-    return attacker.apply(
-        [defender, damage], lambda a, b, c: c if a >= b else 0)
+    return apply(
+        [attacker, defender, damage], lambda a, b, c: c if a >= b else 0)
 
 
 def parse_attack(attack):
@@ -79,7 +79,7 @@ def asset_attack(asset, defender):
     return Attacker(
         asset=asset['Asset'],
         hp=int(asset['HP']),
-        hit=a_dice.apply([d_dice], lambda a, b: sign(a - b)),
+        hit=apply([a_dice, d_dice], lambda a, b: sign(a - b)),
         damage=dmg,
     )
 
@@ -199,13 +199,25 @@ def apply_damage(assets, dmg):
 
 
 def apply_damage_v2(assets, dmg):
+    """The cheesy damage apply
+
+    In some situations we want to let the damage go to the BoI rather than the
+    defending asset. If ANY of the following is true the asset takes the hit
+
+    * The asset would survive the damage
+    * The BoI would NOT survive the damage
+    * The damage is 10 or more
+
+    Otherwise, the damage goes to the BoI
+    """
+
     if not assets:
         return assets
     head = assets[0]
     boi = assets[-1]
     if head > dmg:
         return (head - dmg, *assets[1:])
-    if boi > dmg and dmg < 12:
+    if boi > dmg and dmg <= 100:
         return (*assets[:-1], boi - dmg)
     return tuple(assets[1:])
 
@@ -222,17 +234,18 @@ def potential(attackers, defenders):
     remaining_defenders = Stochastic.constant(tuple(a.hp for a in defense))
     remaining_attackers = Stochastic.constant(len(attacks))
     for atk in attacks:
-        dmg = atk.hit.apply([atk.damage], lambda a, d: d if a >= 0 else 0)
-        counter = remaining_defenders.apply(
-            [atk.hit],
+        dmg = apply([atk.hit, atk.damage], lambda a, d: d if a >= 0 else 0)
+        counter = apply(
+            [remaining_defenders, atk.hit],
             lambda defenders, hit: (
                 defense[-len(defenders)].damage
                 if hit <= 0 and defenders else 0
             )
         )
-        remaining_defenders = remaining_defenders.apply([dmg], apply_damage_v2)
-        remaining_attackers = remaining_attackers.apply(
-            [counter],
+        remaining_defenders = apply(
+            [remaining_defenders, dmg], apply_damage_v2)
+        remaining_attackers = apply(
+            [remaining_attackers, counter],
             lambda attackers, dmg: attackers - (dmg > atk.hp))
         damage.append(dmg)
         counter_damage.append(counter)
@@ -240,25 +253,26 @@ def potential(attackers, defenders):
     return {
         'attacking_assets': [attack.asset for attack in attacks],
         'defending_assets': [counter.asset for counter in defense],
-        'remaining_defending_assets': remaining_defenders.apply(
-            [], lambda d: len(d)),
+        'remaining_defending_assets': apply(
+            [remaining_defenders], lambda d: len(d)),
         'remaining_attacking_assets': remaining_attackers,
         'attacker': attackers[0]['Owner'],
         'defender': defender['Faction Name'],
         'damage': reduce(operator.add, damage),
         'counter_damage': reduce(operator.add, counter_damage),
-        'hplost': remaining_defenders.apply(
-            [], lambda d:  sum(a.hp for a in defense) - sum(d)),
+        'hplost': apply(
+            [remaining_defenders],
+            lambda d:  sum(a.hp for a in defense) - sum(d)),
         'hit': reduce(
             operator.add,
             [
-                a.hit.apply([], lambda a: int(a >= 0))
+                apply([a.hit], lambda a: int(a >= 0))
                 for a in attacks
             ]),
         'counter': reduce(
             operator.add,
             [
-                a.hit.apply([], lambda a: int(a <= 0))
+                apply([a.hit], lambda a: int(a <= 0))
                 for a in attacks
             ]),
     }
@@ -296,18 +310,27 @@ def details(args):
     *attackers, defender = args
     defender = factions[defender]
     ball = list(chain(*[faction_ball(attacker) for attacker in attackers]))
-    # attack = potential(ball, main_boi_defense(defender))
-    attack = potential(
-        ball,
-        on_world(factions['ACRE'], '0407 / Tsatsos / Yakiyah'))
+    defenders = main_boi_defense(defender)
+    attack = potential(ball, defenders)
     print('one turn kill', attack['remaining_defending_assets'][0])
-    print(attack['remaining_defending_assets'])
     print(
+        'damage',
         str(attack['damage'].expected()),
-        str(attack['hplost'].expected()),
+        'hplost',
+        str(attack['hplost'].expected())
+    )
+    print(
         ', '.join(attack['attacking_assets']),
         'VS',
         ', '.join(attack['defending_assets']),
+    )
+    print(
+        "remaining attackers", attack['remaining_attacking_assets'].expected(),
+        len(ball)
+    )
+    print(
+        "remaining defenders", attack['remaining_defending_assets'].expected(),
+        len(defenders)
     )
     display(attack)
     plt.show()
