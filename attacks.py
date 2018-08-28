@@ -150,6 +150,11 @@ def faction_ball(name):
             a for a in fa
             if a['Type'] in ('Special Forces',) and isattacking(a)
         ]
+    if any(a['Asset'] == 'Covert Shipping' for a in fa):
+        return [
+            a for a in fa
+            if a['Type'] in ('Special Forces',) and isattacking(a)
+        ][:1]
     return []
 
 
@@ -167,7 +172,7 @@ def main_boi_defense(faction):
         if a['Owner'] == faction['Faction Name']
         and a['Asset'] == 'Base Of Influence'
     ], key=lambda boi: int(boi['HP']))
-    return on_world(faction,  mainboi['Location'])
+    return on_world(faction, mainboi['Location'])
 
 
 def order_attacks(attacks):
@@ -286,7 +291,7 @@ with open('assets.csv') as assetscsv:
 
 
 def top():
-    balls = filter(None, (faction_ball(f) for f in factions))
+    balls = list(filter(None, (faction_ball(f) for f in factions)))
     for ball in balls:
         print(ball[0]['Owner'], '\t', ', '.join(a['Asset'] for a in ball))
     attacks = [
@@ -300,7 +305,7 @@ def top():
             attack['attacker'],
             attack['defender'],
             str(attack['damage'].expected()),
-            ', '.join(attack['assets'])
+            ', '.join(attack['attacking_assets'])
         ]
         for attack in biggest[:50]
     ]))
