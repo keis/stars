@@ -1,6 +1,7 @@
 import re
 import operator
 import csv
+from argparse import ArgumentParser
 from functools import reduce
 from itertools import product, chain
 
@@ -290,7 +291,7 @@ with open('assets.csv') as assetscsv:
     assets = list(csv.DictReader(assetscsv))
 
 
-def top():
+def top(args):
     balls = list(filter(None, (faction_ball(f) for f in factions)))
     for ball in balls:
         print(ball[0]['Owner'], '\t', ', '.join(a['Asset'] for a in ball))
@@ -312,7 +313,7 @@ def top():
 
 
 def details(args):
-    *attackers, defender = args
+    attackers, defender = args.attacker, args.defender
     defender = factions[defender]
     ball = list(chain(*[faction_ball(attacker) for attacker in attackers]))
     defenders = main_boi_defense(defender)
@@ -341,9 +342,21 @@ def details(args):
     plt.show()
 
 
+def main():
+    parser = ArgumentParser()
+    commands = parser.add_subparsers()
+
+    topparser = commands.add_parser('top')
+    topparser.set_defaults(func=top)
+
+    detailsparser = commands.add_parser('details')
+    detailsparser.add_argument('attacker', nargs='*')
+    detailsparser.add_argument('defender')
+    detailsparser.set_defaults(func=details)
+
+    args = parser.parse_args()
+    args.func(args)
+
+
 if __name__ == '__main__':
-    import sys
-    if sys.argv[1] == 'details':
-        details(sys.argv[2:])
-    elif sys.argv[1] == 'top':
-        top()
+    main()
