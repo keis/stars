@@ -167,13 +167,16 @@ def on_world(faction, world):
     ]
 
 
-def main_boi_defense(faction):
-    mainboi = max([
+def main_boi(faction):
+    return max([
         a for a in assets
         if a['Owner'] == faction['Faction Name']
         and a['Asset'] == 'Base Of Influence'
     ], key=lambda boi: int(boi['HP']))
-    return on_world(faction, mainboi['Location'])
+
+
+def main_boi_defense(faction):
+    return on_world(faction, main_boi(faction)['Location'])
 
 
 def order_attacks(attacks):
