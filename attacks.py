@@ -132,12 +132,14 @@ def display(attack):
     )
 
 
+def isattacking(asset):
+    return not (
+        asset['Attack'] == 'None' or
+        asset['Attack'].endswith('Special')
+    )
+
+
 def faction_ball(name):
-    def isattacking(asset):
-        return not (
-            asset['Attack'] == 'None' or
-            asset['Attack'].endswith('Special')
-        )
     fa = [a for a in assets if a['Owner'] == name]
     if any(a['Asset'] == 'Transit Web' for a in fa):
         return [
@@ -173,10 +175,6 @@ def main_boi(faction):
         if a['Owner'] == faction['Faction Name']
         and a['Asset'] == 'Base Of Influence'
     ], key=lambda boi: int(boi['HP']))
-
-
-def main_boi_defense(faction):
-    return on_world(faction, main_boi(faction)['Location'])
 
 
 def order_attacks(attacks):
@@ -299,7 +297,7 @@ def top(args):
     for ball in balls:
         print(ball[0]['Owner'], '\t', ', '.join(a['Asset'] for a in ball))
     attacks = [
-        potential(ball, main_boi_defense(faction))
+        potential(ball, on_world(faction, main_boi(faction)['Location']))
         for faction, ball in product(factions.values(), balls)
     ]
     biggest = sorted(
@@ -318,15 +316,36 @@ def top(args):
 def details(args):
     attackers, defender = args.attacker, args.defender
     defender = factions[defender]
-    ball = list(chain(*[faction_ball(attacker) for attacker in attackers]))
-    defenders = main_boi_defense(defender)
+    world = args.world or main_boi(defender)['Location']
+    ball = list(chain(
+        *[
+            chain(
+                filter(
+                    lambda a: a['Location'] != world,
+                    faction_ball(attacker),
+                ),
+                filter(
+                    isattacking,
+                    on_world(factions[attacker], world)
+                )
+            )
+            for attacker in attackers
+        ]
+    ))
+    print([b['Asset'] for b in ball])
+    defenders = on_world(defender, world)
     attack = potential(ball, defenders)
     print('one turn kill', attack['remaining_defending_assets'][0])
+    print('one turn flop', attack['remaining_attacking_assets'][0])
     print(
         'damage',
         str(attack['damage'].expected()),
         'hplost',
         str(attack['hplost'].expected())
+    )
+    print(
+        'counter damage',
+        str(attack['counter_damage'].expected()),
     )
     print(
         ', '.join(attack['attacking_assets']),
@@ -355,6 +374,7 @@ def main():
     detailsparser = commands.add_parser('details')
     detailsparser.add_argument('attacker', nargs='*')
     detailsparser.add_argument('defender')
+    detailsparser.add_argument('-w', '--world')
     detailsparser.set_defaults(func=details)
 
     args = parser.parse_args()
