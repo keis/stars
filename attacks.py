@@ -338,6 +338,10 @@ def details(args):
     print('one turn kill', attack['remaining_defending_assets'][0])
     print('one turn flop', attack['remaining_attacking_assets'][0])
     print(
+        'blood the enemy',
+        apply([attack['damage']], lambda d: d >= 14)[True]
+    )
+    print(
         'damage',
         str(attack['damage'].expected()),
         'hplost',
@@ -353,12 +357,26 @@ def details(args):
         ', '.join(attack['defending_assets']),
     )
     print(
-        "remaining attackers", attack['remaining_attacking_assets'].expected(),
-        len(ball)
+        "remaining attackers",
+        attack['remaining_attacking_assets'].expected(),
+        ', '.join([
+            '%s - %s' % (
+                c,
+                attack['remaining_attacking_assets'][c],
+            )
+            for c in range(len(ball) + 1)
+        ])
     )
     print(
-        "remaining defenders", attack['remaining_defending_assets'].expected(),
-        len(defenders)
+        "remaining defenders",
+        attack['remaining_defending_assets'].expected(),
+        ', '.join([
+            '%s - %s' % (
+                c,
+                attack['remaining_defending_assets'][c],
+            )
+            for c in range(len(ball) + 1)
+        ])
     )
     display(attack)
     plt.show()
