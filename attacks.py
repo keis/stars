@@ -26,6 +26,8 @@ class Attacker:
     hp: int
     hit: Stochastic
     damage: Stochastic
+    atkdice: Stochastic
+    defdice: Stochastic
 
 
 @dataclass(unsafe_hash=True)
@@ -75,12 +77,14 @@ def asset_attack(asset, defender):
     attacker = factions[asset['Owner']]
     a, d, dmg = parse_attack(asset['Attack'])
 
-    a_dice = dice('d10+' + attacker[a])
-    d_dice = dice('d10+' + defender[d])
+    atkdice = dice('d10+' + attacker[a])
+    defdice = dice('d10+' + defender[d])
     return Attacker(
         asset=asset['Asset'],
         hp=int(asset['HP']),
-        hit=apply([a_dice, d_dice], lambda a, b: sign(a - b)),
+        atkdice=atkdice,
+        defdice=defdice,
+        hit=apply([atkdice, defdice], lambda a, b: sign(a - b)),
         damage=dmg,
     )
 
@@ -229,7 +233,17 @@ def apply_damage_v2(assets, dmg):
     return tuple(assets[1:])
 
 
-def potential(attackers, defenders):
+def bookreroll(atkroll: int, defroll: int, atk: Attacker) -> Stochastic:
+    adev = abs(atkroll - atk.atkdice.expected())
+    ddev = abs(defroll - atk.defdice.expected())
+    if adev > ddev:
+        atkd, defd = atk.atkdice, Stochastic.constant(defroll)
+    else:
+        atkd, defd = Stochastic.constant(atkroll), atk.defdice
+    return apply([atkd, defd], lambda a, b: sign(a - b))
+
+
+def potential(attackers, defenders, *, defender_has_book=False):
     defender = factions[defenders[0]['Owner']]
     attacks = order_attacks(
         asset_attack(asset, defender) for asset in attackers)
@@ -240,10 +254,22 @@ def potential(attackers, defenders):
     counter_damage = []
     remaining_defenders = Stochastic.constant(tuple(a.hp for a in defense))
     remaining_attackers = Stochastic.constant(len(attacks))
+
+    defbook = Stochastic.constant(defender_has_book)
+
     for atk in attacks:
-        dmg = apply([atk.hit, atk.damage], lambda a, d: d if a >= 0 else 0)
+        hit = apply(
+            [atk.atkdice, atk.defdice, defbook],
+            lambda a, b, book: (
+                sign(a - b)
+                if not book or a - b <= 0 else
+                bookreroll(a, b, atk)
+            )
+        )
+        defbook = apply([atk.hit, defbook], lambda a, d: d if a <= 0 else 0)
+        dmg = apply([hit, atk.damage], lambda a, d: d if a >= 0 else 0)
         counter = apply(
-            [remaining_defenders, atk.hit],
+            [remaining_defenders, hit],
             lambda defenders, hit: (
                 defense[-len(defenders)].damage
                 if hit <= 0 and defenders else 0
@@ -332,14 +358,13 @@ def details(args):
             for attacker in attackers
         ]
     ))
-    print([b['Asset'] for b in ball])
     defenders = on_world(defender, world)
-    attack = potential(ball, defenders)
+    attack = potential(ball, defenders, defender_has_book=True)
     print('one turn kill', attack['remaining_defending_assets'][0])
     print('one turn flop', attack['remaining_attacking_assets'][0])
     print(
         'blood the enemy',
-        apply([attack['damage']], lambda d: d >= 14)[True]
+        apply([attack['hplost']], lambda d: d >= 14)[True]
     )
     print(
         'damage',
