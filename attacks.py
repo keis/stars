@@ -4,12 +4,16 @@ import csv
 from argparse import ArgumentParser
 from functools import reduce
 from itertools import product, chain
+from enum import Enum
 
 import matplotlib.pyplot as plt
 from tabulate import tabulate
 from dataclasses import dataclass
 
 from stochastic import Stochastic, apply
+
+
+Movement = Enum('Movement', 'any none instant')
 
 
 def sign(i: int) -> int:
@@ -143,8 +147,18 @@ def isattacking(asset):
     )
 
 
-def faction_ball(name):
+def faction_ball(name: str, movement: Movement, dest: str):
+    if movement == Movement.none:
+        return []
     fa = [a for a in assets if a['Owner'] == name]
+    if (
+            movement == Movement.any and
+            any(a['Asset'] == 'Covert Transit Net' for a in fa)
+    ):
+        return [
+            a for a in fa
+            if a['Type'] in ('Special Forces',) and isattacking(a)
+        ]
     if any(a['Asset'] == 'Transit Web' for a in fa):
         return [
             a for a in fa
@@ -152,15 +166,12 @@ def faction_ball(name):
             and isattacking(a)
             and a['Asset'] != 'Transit Web'
         ]
-    if any(a['Asset'] == 'Covert Transit Net' for a in fa):
-        return [
-            a for a in fa
-            if a['Type'] in ('Special Forces',) and isattacking(a)
-        ]
     if any(a['Asset'] == 'Covert Shipping' for a in fa):
         return [
             a for a in fa
-            if a['Type'] in ('Special Forces',) and isattacking(a)
+            if a['Type'] in ('Special Forces',)
+            and isattacking(a)
+            and a['Location'] != dest
         ][:1]
     return []
 
@@ -348,7 +359,7 @@ def details(args):
             chain(
                 filter(
                     lambda a: a['Location'] != world,
-                    faction_ball(attacker),
+                    faction_ball(attacker, movement=args.movement, dest=world),
                 ),
                 filter(
                     isattacking,
@@ -415,6 +426,12 @@ def main():
     topparser.set_defaults(func=top)
 
     detailsparser = commands.add_parser('details')
+    detailsparser.add_argument(
+        '-m', '--movement',
+        type=Movement.__getitem__,
+        choices=Movement,
+        default=Movement.any,
+    )
     detailsparser.add_argument('attacker', nargs='*')
     detailsparser.add_argument('defender')
     detailsparser.add_argument('-w', '--world')
