@@ -51,8 +51,10 @@ def keep(vars, count):
 
 def dice(spec) -> Stochastic:
     m = re.match(r'(\d)?d(\d+)(?:k(\d))?(?:\+(\d+))?', spec)
+    if m is None:
+        raise ValueError(f"Invalid format of dice spec `${spec}`")
     count, size, k, offset = [int(v) if v else None for v in m.groups()]
-    d = Stochastic.uniform(range(1, size + 1))
+    d = Stochastic.uniform(range(1, (size or 0) + 1))
     return (
         keep([d] * (count or 1), k or count or 1)
         + Stochastic.constant(offset or 0)
