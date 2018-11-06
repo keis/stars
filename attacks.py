@@ -307,6 +307,9 @@ def potential(attackers, defenders, *, defender_has_book=False):
         'hplost': apply(
             [remaining_defenders],
             lambda d:  sum(a.hp for a in defense) - sum(d)),
+        'boihp': apply(
+            [remaining_defenders],
+            lambda d: d[-1]),
         'hit': reduce(
             operator.add,
             [
@@ -411,9 +414,10 @@ def details(args):
                 c,
                 attack['remaining_defending_assets'][c],
             )
-            for c in range(len(ball) + 1)
+            for c in range(len(defenders) + 1)
         ])
     )
+    print("boi hp", attack['boihp'].expected())
     display(attack)
     plt.show()
 
