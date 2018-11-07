@@ -5,10 +5,11 @@ from argparse import ArgumentParser
 from functools import reduce
 from itertools import product, chain
 from enum import Enum
+from typing import Tuple
 
 import matplotlib.pyplot as plt
 from tabulate import tabulate
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from stochastic import Stochastic, apply
 
@@ -24,7 +25,7 @@ def sign(i: int) -> int:
     return 0
 
 
-@dataclass(unsafe_hash=True)
+@dataclass(frozen=True)
 class Attacker:
     asset: str
     hp: int
@@ -34,7 +35,7 @@ class Attacker:
     defdice: Stochastic
 
 
-@dataclass(unsafe_hash=True)
+@dataclass(frozen=True)
 class Defender:
     asset: str
     hp: int
@@ -213,16 +214,22 @@ def order_defense(counters):
     )
 
 
-def apply_damage(assets, dmg):
+def apply_damage(
+    assets: Tuple[Defender, ...],
+    dmg: int
+) -> Tuple[Defender, ...]:
     if not assets:
         return assets
     head, *tail = assets
-    if head > dmg:
-        return (head - dmg, *tail)
+    if head.hp > dmg:
+        return (replace(head, hp=head.hp - dmg), *tail)
     return tuple(tail)
 
 
-def apply_damage_v2(assets, dmg):
+def apply_damage_v2(
+    assets: Tuple[Defender, ...],
+    dmg: int
+) -> Tuple[Defender, ...]:
     """The cheesy damage apply
 
     In some situations we want to let the damage go to the BoI rather than the
@@ -239,10 +246,10 @@ def apply_damage_v2(assets, dmg):
         return assets
     head = assets[0]
     boi = assets[-1]
-    if head > dmg:
-        return (head - dmg, *assets[1:])
-    if boi > dmg and dmg <= 100:
-        return (*assets[:-1], boi - dmg)
+    if head.hp > dmg:
+        return (replace(head, hp=head.hp - dmg), *assets[1:])
+    if boi.hp > dmg and dmg <= 10:
+        return (*assets[:-1], replace(boi, hp=boi.hp - dmg))
     return tuple(assets[1:])
 
 
@@ -265,7 +272,7 @@ def potential(attackers, defenders, *, defender_has_book=False):
 
     damage = []
     counter_damage = []
-    remaining_defenders = Stochastic.constant(tuple(a.hp for a in defense))
+    remaining_defenders = Stochastic.constant(tuple(defense))
     remaining_attackers = Stochastic.constant(len(attacks))
 
     defbook = Stochastic.constant(defender_has_book)
@@ -284,7 +291,7 @@ def potential(attackers, defenders, *, defender_has_book=False):
         counter = apply(
             [remaining_defenders, hit],
             lambda defenders, hit: (
-                defense[-len(defenders)].damage
+                defenders[0].damage
                 if hit <= 0 and defenders else 0
             )
         )
@@ -308,10 +315,10 @@ def potential(attackers, defenders, *, defender_has_book=False):
         'counter_damage': reduce(operator.add, counter_damage),
         'hplost': apply(
             [remaining_defenders],
-            lambda d:  sum(a.hp for a in defense) - sum(d)),
+            lambda d:  sum(a.hp for a in defense) - sum(a.hp for a in d)),
         'boihp': apply(
             [remaining_defenders],
-            lambda d: d[-1]),
+            lambda d: d[-1].hp if d else 0),
         'hit': reduce(
             operator.add,
             [

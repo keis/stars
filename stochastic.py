@@ -19,6 +19,12 @@ class Stochastic(dict):
     def __missing__(self, key):
         return 0
 
+    def __hash__(self):
+        h = getattr(self, '_hash', None)
+        if not h:
+            self._hash = h = hash(tuple(sorted(self.items())))
+        return h
+
     def expected(self):
         return reduce(operator.add, (v * p for v, p in self.items()))
 
