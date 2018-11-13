@@ -5,14 +5,17 @@ from argparse import ArgumentParser
 from functools import reduce
 from itertools import product, chain
 from enum import Enum
-from typing import Tuple
+from typing import Dict, TypeVar, Tuple, List, Iterable
 
 import matplotlib.pyplot as plt
 from tabulate import tabulate
 from dataclasses import dataclass, replace
 
-from stochastic import Stochastic, apply
+from stochastic import Stochastic, Reduce, apply
 
+
+T = TypeVar('T')
+K = TypeVar('K')
 
 Movement = Enum('Movement', 'any none instant')
 
@@ -29,28 +32,29 @@ def sign(i: int) -> int:
 class Attacker:
     asset: str
     hp: int
-    hit: Stochastic
-    damage: Stochastic
-    atkdice: Stochastic
-    defdice: Stochastic
+    hit: Stochastic[int]
+    damage: Stochastic[int]
+    atkdice: Stochastic[int]
+    defdice: Stochastic[int]
 
 
 @dataclass(frozen=True)
 class Defender:
     asset: str
     hp: int
-    damage: Stochastic
+    damage: Stochastic[int]
 
 
-def keep(vars, count):
-    head, *others = vars
-    return apply(
-        vars,
-        lambda *v: reduce(operator.add, sorted(v, reverse=True)[:count])
-    )
+def keep(vars: Iterable[Stochastic[int]], count: int) -> Stochastic[int]:
+    fun: Reduce[int] = operator.add
+
+    def _keep(*v: int) -> int:
+        return reduce(fun, sorted(v, reverse=True)[:count])
+
+    return apply(vars, _keep)
 
 
-def dice(spec) -> Stochastic:
+def dice(spec: str) -> Stochastic[int]:
     m = re.match(r'(\d)?d(\d+)(?:k(\d))?(?:\+(\d+))?', spec)
     if m is None:
         raise ValueError(f"Invalid format of dice spec `${spec}`")
@@ -62,21 +66,19 @@ def dice(spec) -> Stochastic:
     )
 
 
-def attack(attacker, defender, damage):
-    return apply(
-        [attacker, defender, damage], lambda a, b, c: c if a >= b else 0)
-
-
-def parse_attack(attack):
+def parse_attack(attack: str) -> Tuple[str, str, Stochastic[int]]:
     roll, dmg = attack.split(', ')
-    return (*re.split('[vV]', roll), dice(dmg))
+    atkt, deft = re.split('[vV]', roll)
+    return (atkt, deft, dice(dmg))
 
 
-def asset_attack(asset, defender):
+def asset_attack(asset: Dict[str, str], defender: Dict[str, str]):
     if asset['Attack'] == 'None' or asset['Attack'].endswith('Special'):
         return Attacker(
             asset=asset['Asset'],
-            hp=asset['HP'],
+            hp=int(asset['HP']),
+            atkdice=Stochastic.constant(0),
+            defdice=Stochastic.constant(0),
             hit=Stochastic.constant(0),
             damage=Stochastic.constant(0),
         )
@@ -91,12 +93,15 @@ def asset_attack(asset, defender):
         hp=int(asset['HP']),
         atkdice=atkdice,
         defdice=defdice,
-        hit=apply([atkdice, defdice], lambda a, b: sign(a - b)),
+        hit=apply(
+            (atkdice, defdice),
+            lambda a, b: sign(a - b)  # type: ignore
+        ),
         damage=dmg,
     )
 
 
-def asset_counter(asset):
+def asset_counter(asset: Dict[str, str]):
     if asset['Counter'] == 'None':
         dmg = Stochastic.constant(0)
     else:
@@ -113,21 +118,21 @@ def display(attack):
     fig.canvas.set_window_title(
         f"{attack['attacker']} attacking {attack['defender']}")
 
-    keys = (
+    ax1keys = (
         'hit', 'counter',
         'remaining_defending_assets', 'remaining_attacking_assets'
     )
     ax1.bar(
-        keys,
-        [attack[k].expected() for k in keys],
-        yerr=[attack[k].stddev() for k in keys],
+        ax1keys,
+        [attack[k].expected() for k in ax1keys],
+        yerr=[attack[k].stddev() for k in ax1keys],
     )
 
-    keys = ('damage', 'hplost', 'counter_damage')
+    ax2keys = ('damage', 'hplost', 'counter_damage')
     ax2.bar(
-        keys,
-        [attack[k].expected() for k in keys],
-        yerr=[attack[k].stddev() for k in keys],
+        ax2keys,
+        [attack[k].expected() for k in ax2keys],
+        yerr=[attack[k].stddev() for k in ax2keys],
     )
 
     damage = sorted(attack['hplost'].items())
@@ -143,17 +148,28 @@ def display(attack):
     )
 
 
-def isattacking(asset):
+def isattacking(asset: Dict[str, str]) -> bool:
     return not (
         asset['Attack'] == 'None' or
         asset['Attack'].endswith('Special')
     )
 
 
-def faction_ball(name: str, movement: Movement, dest: str):
+def faction_ball(
+        name: str,
+        movement: Movement,
+        dest: str
+) -> Iterable[Dict[str, str]]:
     if movement == Movement.none:
         return []
     fa = [a for a in assets if a['Owner'] == name]
+    if any(a['Asset'] == 'Transit Web' for a in fa):
+        return [
+            a for a in fa
+            if a['W/C/F'] in ('Wealth', 'Cunning')
+            and isattacking(a)
+            and a['Asset'] != 'Transit Web'
+        ]
     if (
             movement == Movement.any and
             any(a['Asset'] == 'Covert Transit Net' for a in fa)
@@ -161,13 +177,6 @@ def faction_ball(name: str, movement: Movement, dest: str):
         return [
             a for a in fa
             if a['Type'] in ('Special Forces',) and isattacking(a)
-        ]
-    if any(a['Asset'] == 'Transit Web' for a in fa):
-        return [
-            a for a in fa
-            if a['W/C/F'] in ('Wealth', 'Cunning')
-            and isattacking(a)
-            and a['Asset'] != 'Transit Web'
         ]
     if any(a['Asset'] == 'Covert Shipping' for a in fa):
         return [
@@ -179,7 +188,7 @@ def faction_ball(name: str, movement: Movement, dest: str):
     return []
 
 
-def on_world(faction, world):
+def on_world(faction: Dict[str, str], world: str) -> Iterable[Dict[str, str]]:
     return [
         a for a in assets
         if a['Owner'] == faction['Faction Name']
@@ -187,7 +196,7 @@ def on_world(faction, world):
     ]
 
 
-def main_boi(faction):
+def main_boi(faction: Dict[str, str]) -> Dict[str, str]:
     return max([
         a for a in assets
         if a['Owner'] == faction['Faction Name']
@@ -253,14 +262,14 @@ def apply_damage_v2(
     return tuple(assets[1:])
 
 
-def bookreroll(atkroll: int, defroll: int, atk: Attacker) -> Stochastic:
+def bookreroll(atkroll: int, defroll: int, atk: Attacker) -> Stochastic[int]:
     adev = abs(atkroll - atk.atkdice.expected())
     ddev = abs(defroll - atk.defdice.expected())
     if adev > ddev:
         atkd, defd = atk.atkdice, Stochastic.constant(defroll)
     else:
         atkd, defd = Stochastic.constant(atkroll), atk.defdice
-    return apply([atkd, defd], lambda a, b: sign(a - b))
+    return apply((atkd, defd), lambda a, b: sign(a - b))
 
 
 def potential(attackers, defenders, *, defender_has_book=False):
@@ -270,8 +279,8 @@ def potential(attackers, defenders, *, defender_has_book=False):
     defense = order_defense(
         asset_counter(asset) for asset in defenders)
 
-    damage = []
-    counter_damage = []
+    damage: List[Stochastic[int]] = []
+    counter_damage: List[Stochastic[int]] = []
     remaining_defenders = Stochastic.constant(tuple(defense))
     remaining_attackers = Stochastic.constant(len(attacks))
 
@@ -279,26 +288,26 @@ def potential(attackers, defenders, *, defender_has_book=False):
 
     for atk in attacks:
         hit = apply(
-            [atk.atkdice, atk.defdice, defbook],
+            (atk.atkdice, atk.defdice, defbook),
             lambda a, b, book: (
                 sign(a - b)
                 if not book or a - b <= 0 else
                 bookreroll(a, b, atk)
             )
         )
-        defbook = apply([atk.hit, defbook], lambda a, d: d if a <= 0 else 0)
-        dmg = apply([hit, atk.damage], lambda a, d: d if a >= 0 else 0)
+        defbook = apply((atk.hit, defbook), lambda a, d: d if a <= 0 else 0)
+        dmg = apply((hit, atk.damage), lambda a, d: d if a >= 0 else 0)
         counter = apply(
-            [remaining_defenders, hit],
+            (remaining_defenders, hit),
             lambda defenders, hit: (
                 defenders[0].damage
                 if hit <= 0 and defenders else 0
             )
         )
         remaining_defenders = apply(
-            [remaining_defenders, dmg], apply_damage_v2)
+            (remaining_defenders, dmg), apply_damage_v2)
         remaining_attackers = apply(
-            [remaining_attackers, counter],
+            (remaining_attackers, counter),
             lambda attackers, dmg: attackers - (dmg > atk.hp))
         damage.append(dmg)
         counter_damage.append(counter)
@@ -307,47 +316,62 @@ def potential(attackers, defenders, *, defender_has_book=False):
         'attacking_assets': [attack.asset for attack in attacks],
         'defending_assets': [counter.asset for counter in defense],
         'remaining_defending_assets': apply(
-            [remaining_defenders], lambda d: len(d)),
+            (remaining_defenders,), lambda d: len(d)),
         'remaining_attacking_assets': remaining_attackers,
         'attacker': attackers[0]['Owner'],
         'defender': defender['Faction Name'],
         'damage': reduce(operator.add, damage),
         'counter_damage': reduce(operator.add, counter_damage),
         'hplost': apply(
-            [remaining_defenders],
+            (remaining_defenders,),
             lambda d:  sum(a.hp for a in defense) - sum(a.hp for a in d)),
         'boihp': apply(
-            [remaining_defenders],
+            (remaining_defenders,),
             lambda d: d[-1].hp if d else 0),
         'hit': reduce(
             operator.add,
             [
-                apply([a.hit], lambda a: int(a >= 0))
+                apply((a.hit,), lambda a: int(a >= 0))
                 for a in attacks
             ]),
         'counter': reduce(
             operator.add,
             [
-                apply([a.hit], lambda a: int(a <= 0))
+                apply((a.hit,), lambda a: int(a <= 0))
                 for a in attacks
             ]),
     }
 
 
 with open('factions.csv') as factionscsv:
-    factions = {r['Faction Name']: r for r in csv.DictReader(factionscsv)}
+    factions: Dict[str, Dict[str, str]] = {
+        r['Faction Name']: r for r in csv.DictReader(factionscsv)
+    }
 
 with open('assets.csv') as assetscsv:
-    assets = list(csv.DictReader(assetscsv))
+    assets: List[Dict[str, str]] = list(csv.DictReader(assetscsv))
 
 
 def top(args):
-    balls = list(filter(None, (faction_ball(f) for f in factions)))
-    for ball in balls:
-        print(ball[0]['Owner'], '\t', ', '.join(a['Asset'] for a in ball))
     attacks = [
-        potential(ball, on_world(faction, main_boi(faction)['Location']))
-        for faction, ball in product(factions.values(), balls)
+        potential(ball, defender)
+        for ball, defender in (
+            (
+                faction_ball(
+                    attacker['Faction Name'],
+                    movement=args.movement,
+                    dest=main_boi(defender)['Location']
+                ),
+                on_world(
+                    defender,
+                    main_boi(defender)['Location']
+                ),
+            )
+            for attacker, defender in product(
+                factions.values(),
+                factions.values(),
+            )
+        ) if ball
     ]
     biggest = sorted(
         attacks, reverse=True, key=lambda a: a['damage'].expected())
@@ -358,7 +382,7 @@ def top(args):
             str(attack['damage'].expected()),
             ', '.join(attack['attacking_assets'])
         ]
-        for attack in biggest[:50]
+        for attack in biggest[:100]
     ]))
 
 
@@ -387,7 +411,7 @@ def details(args):
     print('one turn flop', attack['remaining_attacking_assets'][0])
     print(
         'blood the enemy',
-        apply([attack['hplost']], lambda d: d >= 14)[True]
+        apply((attack['hplost'],), lambda d: d >= 14)[True]
     )
     print(
         'damage',
@@ -433,18 +457,18 @@ def details(args):
 
 def main():
     parser = ArgumentParser()
+    parser.add_argument(
+        '-m', '--movement',
+        type=Movement.__getitem__,
+        choices=Movement,
+        default=Movement.any,
+    )
     commands = parser.add_subparsers()
 
     topparser = commands.add_parser('top')
     topparser.set_defaults(func=top)
 
     detailsparser = commands.add_parser('details')
-    detailsparser.add_argument(
-        '-m', '--movement',
-        type=Movement.__getitem__,
-        choices=Movement,
-        default=Movement.any,
-    )
     detailsparser.add_argument('attacker', nargs='*')
     detailsparser.add_argument('defender')
     detailsparser.add_argument('-w', '--world')
