@@ -11,21 +11,14 @@ import matplotlib.pyplot as plt
 from tabulate import tabulate
 from dataclasses import dataclass, replace
 
-from stochastic import Stochastic, Reduce, apply
+from stochastic import Stochastic, apply
+from dice import dice, versus
 
 
 T = TypeVar('T')
 K = TypeVar('K')
 
 Movement = Enum('Movement', 'any none instant')
-
-
-def sign(i: int) -> int:
-    if i > 0:
-        return 1
-    if i < 0:
-        return -1
-    return 0
 
 
 @dataclass(frozen=True)
@@ -43,27 +36,6 @@ class Defender:
     asset: str
     hp: int
     damage: Stochastic[int]
-
-
-def keep(vars: Iterable[Stochastic[int]], count: int) -> Stochastic[int]:
-    fun: Reduce[int] = operator.add
-
-    def _keep(*v: int) -> int:
-        return reduce(fun, sorted(v, reverse=True)[:count])
-
-    return apply(vars, _keep)
-
-
-def dice(spec: str) -> Stochastic[int]:
-    m = re.match(r'(\d)?d(\d+)(?:k(\d))?(?:\+(\d+))?', spec)
-    if m is None:
-        raise ValueError(f"Invalid format of dice spec `${spec}`")
-    count, size, k, offset = [int(v) if v else None for v in m.groups()]
-    d = Stochastic.uniform(range(1, (size or 0) + 1))
-    return (
-        keep([d] * (count or 1), k or count or 1)
-        + Stochastic.constant(offset or 0)
-    )
 
 
 def parse_attack(attack: str) -> Tuple[str, str, Stochastic[int]]:
@@ -93,10 +65,7 @@ def asset_attack(asset: Dict[str, str], defender: Dict[str, str]):
         hp=int(asset['HP']),
         atkdice=atkdice,
         defdice=defdice,
-        hit=apply(
-            (atkdice, defdice),
-            lambda a, b: sign(a - b)  # type: ignore
-        ),
+        hit=apply((atkdice, defdice), versus),
         damage=dmg,
     )
 
@@ -269,7 +238,7 @@ def bookreroll(atkroll: int, defroll: int, atk: Attacker) -> Stochastic[int]:
         atkd, defd = atk.atkdice, Stochastic.constant(defroll)
     else:
         atkd, defd = Stochastic.constant(atkroll), atk.defdice
-    return apply((atkd, defd), lambda a, b: sign(a - b))
+    return apply((atkd, defd), versus)
 
 
 def potential(attackers, defenders, *, defender_has_book=False):
@@ -290,7 +259,7 @@ def potential(attackers, defenders, *, defender_has_book=False):
         hit = apply(
             (atk.atkdice, atk.defdice, defbook),
             lambda a, b, book: (
-                sign(a - b)
+                versus(a, b)
                 if not book or a - b <= 0 else
                 bookreroll(a, b, atk)
             )
