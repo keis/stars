@@ -7,6 +7,9 @@ from itertools import product, chain
 from enum import Enum
 from typing import Dict, TypeVar, Tuple, List, Iterable
 
+import matplotlib
+matplotlib.rcParams['backend'] = 'gtk3cairo'
+
 import matplotlib.pyplot as plt
 from tabulate import tabulate
 from dataclasses import dataclass, replace
