@@ -3,7 +3,7 @@ import operator
 from functools import reduce
 from typing import Sequence
 
-from stochastic import Stochastic, Reduce, apply
+from stochastic import Stochastic, Reduce
 
 
 def sign(i: int) -> int:
@@ -24,7 +24,7 @@ def keep(bag: Stochastic[Sequence[int]], count: int) -> Stochastic[int]:
     def _keep(v: Sequence[int]) -> int:
         return reduce(fun, sorted(v, reverse=True)[:count])
 
-    return apply([bag], _keep)
+    return bag.map(_keep)
 
 
 def dice(spec: str) -> Stochastic[int]:

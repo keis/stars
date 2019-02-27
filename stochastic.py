@@ -37,6 +37,20 @@ class Stochastic(Dict[T, float]):
         p = 1 / len(values)
         return cls((v, p) for v in values)
 
+    @classmethod
+    def collect(
+            cls: Type['Stochastic[T]'],
+            items: Iterable[Tuple[Union[T, 'Stochastic[T]'], float]]
+    ) -> 'Stochastic[T]':
+        result: Stochastic[T] = Stochastic()
+        for (v, p) in items:
+            if isinstance(v, Stochastic):
+                for iv, ip in v.items():
+                    result[iv] += (p * ip)
+            else:
+                result[v] += p
+        return result
+
     def __missing__(self, key):
         return 0
 
@@ -56,6 +70,12 @@ class Stochastic(Dict[T, float]):
 
     def bag(self: 'Stochastic[T]', k: int) -> 'Stochastic[Sequence[T]]':
         return Stochastic(self._bag(k))
+
+    def map(
+            self: 'Stochastic[T]',
+            fun: Callable[[T], Union['Stochastic[S]', S]]
+    ) -> 'Stochastic[S]':
+        return Stochastic.collect((fun(v), p) for v, p in self.items())
 
     def expected(self: 'Stochastic[int]') -> float:
         fun: Reduce[float] = operator.add
@@ -107,13 +127,9 @@ def apply(
 
 
 def apply(vars, op: Callable[..., Union[Stochastic[T], T]]) -> Stochastic[T]:
-    result: Stochastic[T] = Stochastic()
-    for point in product(*[v.items() for v in vars]):
-        v = op(*[v for v, _ in point])
-        p = reduce(operator.mul, [p for _, p in point], 1)
-        if isinstance(v, Stochastic):
-            for iv, ip in v.items():
-                result[iv] += (p * ip)
-        else:
-            result[v] += p
-    return result
+    def _apply():
+        for point in product(*[v.items() for v in vars]):
+            v = op(*[v for v, _ in point])
+            p = reduce(operator.mul, [p for _, p in point], 1)
+            yield v, p
+    return Stochastic.collect(_apply())
