@@ -160,7 +160,7 @@ def faction_ball(
 def on_world(faction: Dict[str, str], world: str) -> Iterable[Dict[str, str]]:
     return [
         a for a in assets
-        if a['Owner'] == faction['Faction Name']
+        if a['Owner'] == faction['Faction']
         and a['Location'] == world
     ]
 
@@ -168,7 +168,7 @@ def on_world(faction: Dict[str, str], world: str) -> Iterable[Dict[str, str]]:
 def main_boi(faction: Dict[str, str]) -> Dict[str, str]:
     return max([
         a for a in assets
-        if a['Owner'] == faction['Faction Name']
+        if a['Owner'] == faction['Faction']
         and a['Asset'] == 'Base Of Influence'
     ], key=lambda boi: int(boi['HP']))
 
@@ -288,7 +288,7 @@ def potential(attackers, defenders, *, defender_has_book=False):
             (remaining_defenders,), lambda d: len(d)),
         'remaining_attacking_assets': remaining_attackers,
         'attacker': attackers[0]['Owner'],
-        'defender': defender['Faction Name'],
+        'defender': defender['Faction'],
         'damage': reduce(operator.add, damage),
         'counter_damage': reduce(operator.add, counter_damage),
         'hplost': apply(
@@ -314,7 +314,7 @@ def potential(attackers, defenders, *, defender_has_book=False):
 
 with open('factions.csv') as factionscsv:
     factions: Dict[str, Dict[str, str]] = {
-        r['Faction Name']: r for r in csv.DictReader(factionscsv)
+        r['Faction']: r for r in csv.DictReader(factionscsv)
     }
 
 with open('assets.csv') as assetscsv:
@@ -327,7 +327,7 @@ def top(args):
         for ball, defender in (
             (
                 faction_ball(
-                    attacker['Faction Name'],
+                    attacker['Faction'],
                     movement=args.movement,
                     dest=main_boi(defender)['Location']
                 ),
