@@ -15,11 +15,25 @@ A2 = TypeVar('A2')
 Reduce = Callable[[T, T], T]
 StochasticSeq = Iterable[Tuple[T, float]]
 
-def combinations(point) -> float:
-    return reduce(
-        operator.mul,
-        [factorial(len(list(grp))) for _, grp in groupby(point)]
-    )
+
+# math.prod in >=3.8
+def prod(factors: Iterable[int]) -> int:
+    return reduce(operator.mul, factors)
+
+
+def combinations_with_permutation_count(
+        items: Iterable[T],
+        n: int
+) -> Iterable[Tuple[Tuple[T, ...], int]]:
+    """
+    Generates all the multisets of cardinality `n` from `items` and their
+    number of permutations
+    """
+    nf: int = factorial(n)
+    for item in combinations_with_replacement(items, n):
+        kf = prod([factorial(len(list(grp))) for _, grp in groupby(item)])
+        yield item, (nf // kf)
+
 
 class Stochastic(Dict[T, float]):
     _hash: int
@@ -62,11 +76,10 @@ class Stochastic(Dict[T, float]):
             return h
 
     def _bag(self: 'Stochastic[T]', k: int) -> StochasticSeq[Sequence[T]]:
-        kf = factorial(k)
-        for point in combinations_with_replacement(self.items(), k):
+        for point, c in combinations_with_permutation_count(self.items(), k):
             v = tuple(v for v, _ in point)
             p: float = reduce(operator.mul, [p for _, p in point], 1)
-            yield v, p * (kf / combinations(point))
+            yield v, p * c
 
     def bag(self: 'Stochastic[T]', k: int) -> 'Stochastic[Sequence[T]]':
         return Stochastic(self._bag(k))
