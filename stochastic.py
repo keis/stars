@@ -1,3 +1,4 @@
+from __future__ import annotations
 import operator
 from functools import reduce
 from math import sqrt, factorial
@@ -39,23 +40,23 @@ class Stochastic(Dict[T, float]):
     _hash: int
 
     @classmethod
-    def constant(cls: Type['Stochastic[T]'], value: T) -> 'Stochastic[T]':
+    def constant(cls: Type[Stochastic[T]], value: T) -> Stochastic[T]:
         return cls(((value, 1),))
 
     @classmethod
     def uniform(
-            cls: Type['Stochastic[T]'],
+            cls: Type[Stochastic[T]],
             values: Iterable[T]
-    ) -> 'Stochastic[T]':
+    ) -> Stochastic[T]:
         values = list(values)
         p = 1 / len(values)
         return cls((v, p) for v in values)
 
     @classmethod
     def collect(
-            cls: Type['Stochastic[T]'],
-            items: Iterable[Tuple[Union[T, 'Stochastic[T]'], float]]
-    ) -> 'Stochastic[T]':
+            cls: Type[Stochastic[T]],
+            items: Iterable[Tuple[Union[T, Stochastic[T]], float]]
+    ) -> Stochastic[T]:
         result: Stochastic[T] = Stochastic()
         for (v, p) in items:
             if isinstance(v, Stochastic):
@@ -75,38 +76,38 @@ class Stochastic(Dict[T, float]):
             h = self._hash = hash(tuple(sorted(self.items())))
             return h
 
-    def _bag(self: 'Stochastic[T]', k: int) -> StochasticSeq[Sequence[T]]:
+    def _bag(self: Stochastic[T], k: int) -> StochasticSeq[Sequence[T]]:
         for point, c in combinations_with_permutation_count(self.items(), k):
             v = tuple(v for v, _ in point)
             p: float = reduce(operator.mul, [p for _, p in point], 1)
             yield v, p * c
 
-    def bag(self: 'Stochastic[T]', k: int) -> 'Stochastic[Sequence[T]]':
+    def bag(self: Stochastic[T], k: int) -> Stochastic[Sequence[T]]:
         return Stochastic(self._bag(k))
 
     def map(
-            self: 'Stochastic[T]',
-            fun: Callable[[T], Union['Stochastic[S]', S]]
-    ) -> 'Stochastic[S]':
+            self: Stochastic[T],
+            fun: Callable[[T], Union[Stochastic[S], S]]
+    ) -> Stochastic[S]:
         return Stochastic.collect((fun(v), p) for v, p in self.items())
 
-    def expected(self: 'Stochastic[int]') -> float:
+    def expected(self: Stochastic[int]) -> float:
         fun: Reduce[float] = operator.add
         return reduce(fun, (v * p for v, p in self.items()))
 
-    def variance(self: 'Stochastic[int]') -> float:
+    def variance(self: Stochastic[int]) -> float:
         mu = self.expected()
         return sum((p * (v - mu) ** 2 for v, p in self.items()))
 
-    def stddev(self: 'Stochastic[int]') -> float:
+    def stddev(self: Stochastic[int]) -> float:
         return sqrt(self.variance())
 
-    def __add__(self, other: 'Stochastic[T]') -> 'Stochastic[T]':
+    def __add__(self, other: Stochastic[T]) -> Stochastic[T]:
         fun: Reduce[T] = operator.add
         return apply((self, other), fun)
 
-    def __mul__(self, scalar: int) -> 'Stochastic[T]':
-        fun: Reduce['Stochastic[T]'] = operator.add
+    def __mul__(self, scalar: int) -> Stochastic[T]:
+        fun: Reduce[Stochastic[T]] = operator.add
         return reduce(fun, [self] * scalar)
 
 
