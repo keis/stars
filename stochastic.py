@@ -110,6 +110,9 @@ class Stochastic(Dict[T, float]):
         fun: Reduce[Stochastic[T]] = operator.add
         return reduce(fun, [self] * scalar)
 
+    def __le__(self: Stochastic[int], scalar: int) -> Stochastic[bool]:
+        return self.map(lambda a: a <= scalar)
+
 
 # pylint: disable=unused-argument, pointless-statement, function-redefined
 @overload

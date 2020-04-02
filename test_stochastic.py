@@ -64,6 +64,14 @@ def test_2d6_bag():
     assert v.stddev() == approx(2.41, rel=1e-2)
 
 
+def test_le():
+    v = d6() * 2
+    assert (v <= 2)[True] == approx(1 / 36)
+    assert (v <= 12)[True] == approx(1)
+    assert (v <= 7)[True] == approx(21 / 36)
+    assert (v <= 8)[True] - (v <= 7)[True] == approx(v[8])
+
+
 @pytest.mark.parametrize('n', [2, 4, 6, 8])
 def test_nd6_mul(n, benchmark):
     benchmark(lambda: d6() * n)
